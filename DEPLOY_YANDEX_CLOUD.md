@@ -97,40 +97,55 @@ ssh ubuntu@51.250.12.34
 
 ### Шаг 3: Автоматическая установка
 
-На сервере выполните:
+**⚠️ Сначала загрузите проект на сервер:**
 
 ```bash
-# Скачайте скрипт установки
-wget https://raw.githubusercontent.com/PashaTai/monitorshik/main/deploy/setup.sh
+# Вариант 1: Если у вас проект в Git репозитории
+git clone <URL-вашего-репозитория>
+cd monitorshik-latest
 
-# Или если wget не работает:
-curl -O https://raw.githubusercontent.com/PashaTai/monitorshik/main/deploy/setup.sh
+# Вариант 2: Загрузите через SCP с локального компьютера
+# На вашем локальном компьютере выполните:
+# scp -r путь/к/monitorshik-latest ubuntu@<ваш-IP>:~/
 
-# Сделайте скрипт исполняемым
-chmod +x setup.sh
+# Вариант 3: Создайте архив и загрузите
+# Локально: tar -czf monitorshik.tar.gz monitorshik-latest/
+# На сервере: scp monitorshik.tar.gz ubuntu@<ваш-IP>:~/ && ssh ubuntu@<ваш-IP> "tar -xzf monitorshik.tar.gz"
+```
 
-# Запустите установку
-bash setup.sh
+**Затем запустите скрипт установки:**
+
+```bash
+# Перейдите в директорию проекта
+cd ~/monitorshik-latest
+
+# Запустите скрипт установки
+bash deploy/setup.sh
 ```
 
 Скрипт автоматически:
 - ✅ Обновит систему
-- ✅ Установит Python 3.11
-- ✅ Клонирует репозиторий
+- ✅ Установит Python 3.11 и зависимости
 - ✅ Создаст виртуальное окружение
-- ✅ Установит зависимости
+- ✅ Установит Python пакеты
 - ✅ Попросит ввести ENV переменные
 - ✅ Создаст systemd service
 - ✅ Настроит автозапуск
 
 **Вам нужно будет ввести:**
-- `TG_API_ID` - ваш API ID
+- `TG_API_ID` - ваш API ID (получите на https://my.telegram.org)
 - `TG_API_HASH` - ваш API Hash
-- `TG_STRING_SESSION` - ваш StringSession
-- `BOT_TOKEN` - токен бота
-- `ALERT_CHAT_ID` - ID группы для уведомлений
-- `CHANNELS` - список каналов через запятую
+- `TG_STRING_SESSION` - ваш StringSession (см. README.md)
+- `BOT_TOKEN` - токен бота (получите через @BotFather)
+- `ALERT_CHAT_ID` - ID группы для уведомлений в формате **-100XXXXXXXXXX**
+- `CHANNELS` - список каналов через запятую **БЕЗ @** (например: durov,telegram)
 - `TZ` - timezone (по умолчанию Europe/Moscow)
+
+**⚠️ Важно про ALERT_CHAT_ID:**
+- Используйте формат `-100XXXXXXXXXX` (отрицательное число с префиксом -100)
+- Получить ID: добавьте бота @userinfobot в вашу группу
+- **НЕ убирайте** минус и префикс -100!
+- Пример: `-1001234567890`
 
 ### Шаг 4: Запуск и проверка
 
@@ -180,16 +195,27 @@ ssh ubuntu@<ваш-IP>
 sudo apt update && sudo apt upgrade -y
 
 # Установите необходимые пакеты
-sudo apt install -y python3.11 python3.11-venv python3-pip git
+sudo apt install -y python3.11 python3.11-venv python3-pip
 ```
 
-### 2. Клонирование проекта
+### 2. Загрузка проекта на сервер
 
+Выберите один из способов:
+
+**Способ 1: Через Git (если проект в репозитории)**
 ```bash
-# Клонируйте репозиторий
 cd ~
-git clone https://github.com/PashaTai/monitorshik.git
-cd monitorshik
+git clone <URL-вашего-репозитория>
+cd monitorshik-latest
+```
+
+**Способ 2: Через SCP (с локального компьютера)**
+```bash
+# На локальном компьютере:
+scp -r путь/к/monitorshik-latest ubuntu@<ваш-IP>:~/
+
+# Затем на сервере:
+cd ~/monitorshik-latest
 ```
 
 ### 3. Настройка Python окружения
@@ -209,11 +235,12 @@ pip install -r requirements.txt
 ### 4. Настройка переменных окружения
 
 ```bash
-# Создайте файл .env
+# Скопируйте шаблон и откройте для редактирования
+cp env.example .env
 nano .env
 ```
 
-Вставьте ваши данные:
+Заполните ваши данные (см. комментарии в файле):
 
 ```env
 TG_API_ID=12345678
@@ -224,6 +251,11 @@ ALERT_CHAT_ID=-1001234567890
 CHANNELS=durov,telegram
 TZ=Europe/Moscow
 ```
+
+**⚠️ Важно:**
+- `ALERT_CHAT_ID` должен быть в формате `-100XXXXXXXXXX`
+- `CHANNELS` указываются **БЕЗ символа @**
+- Как получить ID группы: добавьте @userinfobot в вашу группу
 
 Сохраните: `Ctrl+O`, `Enter`, `Ctrl+X`
 
@@ -236,7 +268,7 @@ chmod 600 .env
 
 ```bash
 # Активируйте окружение (если не активировано)
-source ~/monitorshik/venv/bin/activate
+source ~/monitorshik-latest/venv/bin/activate
 
 # Запустите воркер
 python worker.py
@@ -251,7 +283,7 @@ python worker.py
 sudo nano /etc/systemd/system/telegram-monitor.service
 ```
 
-Вставьте (замените `ubuntu` на ваш username, если отличается):
+Вставьте (замените `ubuntu` и путь, если отличаются):
 
 ```ini
 [Unit]
@@ -261,9 +293,9 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/monitorshik
-EnvironmentFile=/home/ubuntu/monitorshik/.env
-ExecStart=/home/ubuntu/monitorshik/venv/bin/python /home/ubuntu/monitorshik/worker.py
+WorkingDirectory=/home/ubuntu/monitorshik-latest
+EnvironmentFile=/home/ubuntu/monitorshik-latest/.env
+ExecStart=/home/ubuntu/monitorshik-latest/venv/bin/python /home/ubuntu/monitorshik-latest/worker.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -340,14 +372,14 @@ sudo journalctl -u telegram-monitor > logs.txt
 
 ## Обновление кода
 
-Когда вы вносите изменения в код и делаете `git push`:
+Когда вы вносите изменения в код и делаете `git push` (если проект в Git):
 
 ```bash
 # 1. Подключитесь к серверу
 ssh ubuntu@<ваш-IP>
 
 # 2. Перейдите в директорию проекта
-cd ~/monitorshik
+cd ~/monitorshik-latest
 
 # 3. Остановите сервис
 sudo systemctl stop telegram-monitor
@@ -366,9 +398,19 @@ sudo systemctl start telegram-monitor
 sudo journalctl -u telegram-monitor -f
 ```
 
-**Быстрая команда для обновления:**
+**Быстрая команда для обновления (через Git):**
 ```bash
-cd ~/monitorshik && sudo systemctl stop telegram-monitor && git pull && sudo systemctl start telegram-monitor && sudo journalctl -u telegram-monitor -f
+cd ~/monitorshik-latest && sudo systemctl stop telegram-monitor && git pull && sudo systemctl start telegram-monitor && sudo journalctl -u telegram-monitor -f
+```
+
+**Если проект не в Git (обновление через SCP):**
+```bash
+# На локальном компьютере:
+scp путь/к/worker.py ubuntu@<ваш-IP>:~/monitorshik-latest/
+
+# На сервере:
+sudo systemctl restart telegram-monitor
+sudo journalctl -u telegram-monitor -f
 ```
 
 ---
@@ -430,7 +472,7 @@ sudo apt install htop
 df -h
 
 # Размер папки проекта
-du -sh ~/monitorshik
+du -sh ~/monitorshik-latest
 ```
 
 ### Настройка алертов при падении сервиса
@@ -445,10 +487,10 @@ du -sh ~/monitorshik
 
 ```bash
 # Сделайте резервную копию .env
-cp ~/monitorshik/.env ~/monitorshik/.env.backup
+cp ~/monitorshik-latest/.env ~/monitorshik-latest/.env.backup
 
 # Или скачайте на локальный компьютер
-scp ubuntu@<ваш-IP>:~/monitorshik/.env ./env.backup
+scp ubuntu@<ваш-IP>:~/monitorshik-latest/.env ./env.backup
 ```
 
 ### Snapshot диска в Yandex Cloud
@@ -473,7 +515,7 @@ sudo journalctl -u telegram-monitor -n 50 --no-pager
 sudo systemctl status telegram-monitor
 
 # Попробуйте запустить вручную для отладки
-cd ~/monitorshik
+cd ~/monitorshik-latest
 source venv/bin/activate
 python worker.py
 ```
@@ -482,7 +524,7 @@ python worker.py
 
 ```bash
 # Проверьте .env файл
-cat ~/monitorshik/.env
+cat ~/monitorshik-latest/.env
 
 # Убедитесь что StringSession правильный
 # Проверьте интернет соединение
@@ -527,7 +569,7 @@ sudo rm /etc/systemd/system/telegram-monitor.service
 sudo systemctl daemon-reload
 
 # Удалите проект
-rm -rf ~/monitorshik
+rm -rf ~/monitorshik-latest
 
 # Удалите Python (опционально)
 sudo apt remove python3.11 python3.11-venv
@@ -579,7 +621,8 @@ A: При создании VM выберите другую зону (ru-central
 1. Проверьте логи: `sudo journalctl -u telegram-monitor -f`
 2. Проверьте статус: `sudo systemctl status telegram-monitor`
 3. Проверьте интернет на VM: `ping google.com`
-4. Проверьте .env файл: `cat ~/monitorshik/.env`
+4. Проверьте .env файл: `cat ~/monitorshik-latest/.env`
+5. Убедитесь что `ALERT_CHAT_ID` в формате `-100XXXXXXXXXX`
 
 ---
 

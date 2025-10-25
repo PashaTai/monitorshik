@@ -5,9 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/monitorshik
-EnvironmentFile=/home/ubuntu/monitorshik/.env
-ExecStart=/home/ubuntu/monitorshik/venv/bin/python /home/ubuntu/monitorshik/worker.py
+WorkingDirectory=/home/ubuntu/monitorshik-latest
+EnvironmentFile=/home/ubuntu/monitorshik-latest/.env
+ExecStart=/home/ubuntu/monitorshik-latest/venv/bin/python /home/ubuntu/monitorshik-latest/worker.py
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -44,20 +44,27 @@ fi
 echo "✅ Python $(python3.11 --version) установлен"
 
 # Определение директории проекта
-PROJECT_DIR="$HOME/monitorshik"
-
-# Клонирование репозитория (если еще не клонирован)
-if [ ! -d "$PROJECT_DIR" ]; then
-    echo "📥 Клонирование репозитория..."
-    read -p "Введите URL репозитория (по умолчанию: https://github.com/PashaTai/monitorshik.git): " REPO_URL
-    REPO_URL=${REPO_URL:-https://github.com/PashaTai/monitorshik.git}
-    
-    git clone "$REPO_URL" "$PROJECT_DIR"
-    cd "$PROJECT_DIR"
+# Если скрипт запущен из deploy/, поднимаемся на уровень выше
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+if [[ "$SCRIPT_DIR" == */deploy ]]; then
+    PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+    echo "✅ Скрипт запущен из deploy/, используется директория проекта: $PROJECT_DIR"
 else
-    echo "✅ Проект уже существует в $PROJECT_DIR"
-    cd "$PROJECT_DIR"
+    PROJECT_DIR="$SCRIPT_DIR"
+    echo "✅ Используется директория проекта: $PROJECT_DIR"
 fi
+
+# Проверка наличия необходимых файлов проекта
+if [ ! -f "$PROJECT_DIR/worker.py" ] || [ ! -f "$PROJECT_DIR/requirements.txt" ]; then
+    echo "❌ Ошибка: файлы проекта не найдены"
+    echo "Убедитесь, что вы:"
+    echo "  1. Клонировали репозиторий: git clone <ваш-репозиторий>"
+    echo "  2. Перешли в директорию проекта: cd monitorshik-latest"
+    echo "  3. Запустили скрипт: bash deploy/setup.sh"
+    exit 1
+fi
+
+cd "$PROJECT_DIR"
 
 # Создание виртуального окружения
 echo "🐍 Создание виртуального окружения..."
@@ -75,13 +82,21 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo "⚙️  Настройка переменных окружения..."
     echo "Сейчас вам нужно будет ввести данные для подключения."
     echo ""
+    echo "💡 Подсказка: см. env.example для примеров значений"
+    echo ""
     
     read -p "TG_API_ID: " TG_API_ID
     read -p "TG_API_HASH: " TG_API_HASH
     read -p "TG_STRING_SESSION: " TG_STRING_SESSION
     read -p "BOT_TOKEN: " BOT_TOKEN
+    
+    echo ""
+    echo "📌 ALERT_CHAT_ID - ID группы для уведомлений"
+    echo "   Формат: -100XXXXXXXXXX (отрицательное число с префиксом -100)"
+    echo "   Получить: добавьте @userinfobot в вашу группу"
     read -p "ALERT_CHAT_ID: " ALERT_CHAT_ID
-    read -p "CHANNELS (через запятую, например: durov,telegram): " CHANNELS
+    
+    read -p "CHANNELS (через запятую БЕЗ @, например: durov,telegram): " CHANNELS
     read -p "TZ (по умолчанию: Europe/Moscow): " TZ
     TZ=${TZ:-Europe/Moscow}
     

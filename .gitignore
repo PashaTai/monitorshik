@@ -1,12 +1,13 @@
-# Byte-compiled / optimized / DLL files
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -20,27 +21,20 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-PIDLIST
 
 # Virtual environments
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
+env/
+.venv
 
-# Telegram session files
+# Telegram sessions
 *.session
 *.session-journal
-
-# Environment variables
-.env
-.env.local
+string_session.txt
 
 # IDE
 .vscode/
@@ -48,11 +42,15 @@ venv.bak/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
 # Logs
 *.log
+logs/
 
+# Backup files
+*.backup
+*.bak
+
+# OS
+Thumbs.db
