@@ -199,16 +199,15 @@ class CommentMonitor:
         # DEBUG: Логируем ВСЕ события
         logger.info(f"🔔 Получено событие: chat_id={event.chat_id}, message_id={message.id}")
         logger.info(f"   Текст: {message.text[:50] if message.text else '(нет текста)'}...")
-        logger.info(f"   reply_to: {message.reply_to}")
-        if message.reply_to:
-            logger.info(f"   reply_to_top_id: {message.reply_to.reply_to_top_id}")
         
-        # Фильтрация: только комментарии к постам
-        if not message.reply_to or not message.reply_to.reply_to_top_id:
-            logger.info("   ❌ Отфильтровано: нет reply_to_top_id")
+        # Фильтрация: только сообщения с reply (комментарии/ответы)
+        if not message.reply_to:
+            logger.info("   ❌ Отфильтровано: нет reply_to")
             return
         
-        post_id = message.reply_to.reply_to_top_id
+        # Определяем ID поста: используем reply_to_top_id если есть, иначе reply_to_msg_id
+        post_id = message.reply_to.reply_to_top_id or message.reply_to.reply_to_msg_id
+        logger.info(f"   ✅ Это комментарий к посту/сообщению {post_id}")
         chat_id = event.chat_id
         
         # Получаем информацию о канале из маппинга
