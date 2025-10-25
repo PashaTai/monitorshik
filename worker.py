@@ -242,10 +242,12 @@ class CommentMonitor:
         
         # Формируем уведомление
         notification = (
-            f"Новый комментарий в <b>{channel_title}</b>\n"
-            f"Пост: {post_link}\n"
-            f"Автор: {author_name} {author_username} (tg://user?id={author_id})\n"
-            f"Время: {time_str}\n\n"
+            f"💬 Новый комментарий в <b>{channel_title}</b>\n\n"
+            f"📄 Пост: {post_link}\n"
+            f"👤 Автор: {author_name} {author_username} (tg://user?id={author_id})\n"
+            f"🕐 Время: {time_str}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💭 Комментарий:\n"
             f"{comment_text}"
         )
         
