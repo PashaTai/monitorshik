@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegram Comment Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/monitorshik
+EnvironmentFile=/home/ubuntu/monitorshik/.env
+ExecStart=/home/ubuntu/monitorshik/venv/bin/python /home/ubuntu/monitorshik/worker.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
