@@ -86,6 +86,8 @@ class CommentMonitor:
         )
         # Маппинг: linked_chat_id -> (channel_username, channel_title)
         self.linked_groups: Dict[int, Tuple[Optional[str], str]] = {}
+        # Список entity объектов групп для подписки на события
+        self.group_entities = []
         self.http_session: Optional[aiohttp.ClientSession] = None
         
         try:
@@ -112,10 +114,8 @@ class CommentMonitor:
             logger.error("Не удалось подключиться ни к одной дискуссионной группе")
             sys.exit(1)
         
-        # Подписываемся на события в linked-группах
-        linked_chat_ids = list(self.linked_groups.keys())
-        
-        @self.client.on(events.NewMessage(chats=linked_chat_ids))
+        # Подписываемся на события в linked-группах используя entity объекты
+        @self.client.on(events.NewMessage(chats=self.group_entities))
         async def handle_comment(event):
             await self._handle_new_message(event)
         
@@ -177,10 +177,12 @@ class CommentMonitor:
                 linked_chat_id = -int(f"100{linked_chat_id}")
                 logger.info(f"Конвертирован ID группы в формат супергруппы: {linked_chat_id}")
             
-            # Сохраняем маппинг
+            # Сохраняем маппинг и entity объект для подписки на события
             channel_title = entity.title
             channel_user = entity.username
             self.linked_groups[linked_chat_id] = (channel_user, channel_title)
+            self.group_entities.append(linked_entity)
+            logger.info(f"Добавлен entity группы для мониторинга")
             
             logger.info(
                 f"✓ Канал {channel_username} настроен. "
