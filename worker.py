@@ -172,6 +172,11 @@ class CommentMonitor:
                     f"Ошибка при вступлении в группу обсуждений {channel_username}: {e}"
                 )
             
+            # Конвертируем положительный ID в отрицательный формат для супергрупп
+            if linked_chat_id > 0:
+                linked_chat_id = -int(f"100{linked_chat_id}")
+                logger.info(f"Конвертирован ID группы в формат супергруппы: {linked_chat_id}")
+            
             # Сохраняем маппинг
             channel_title = entity.title
             channel_user = entity.username
