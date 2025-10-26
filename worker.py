@@ -205,9 +205,9 @@ class CommentMonitor:
             logger.info("   ❌ Отфильтровано: нет reply_to")
             return
         
-        # Определяем ID поста: используем reply_to_top_id если есть, иначе reply_to_msg_id
-        post_id = message.reply_to.reply_to_top_id or message.reply_to.reply_to_msg_id
-        logger.info(f"   ✅ Это комментарий к посту/сообщению {post_id}")
+        # Определяем ID поста в группе обсуждений
+        discussion_post_id = message.reply_to.reply_to_top_id or message.reply_to.reply_to_msg_id
+        logger.info(f"   ✅ Это комментарий к посту/сообщению {discussion_post_id} в группе")
         chat_id = event.chat_id
         
         # Получаем информацию о канале из маппинга
@@ -217,6 +217,29 @@ class CommentMonitor:
             return
         
         channel_username, channel_title = channel_info
+        
+        # Получаем оригинальное сообщение из группы, чтобы найти ID поста в канале
+        channel_post_id = discussion_post_id  # По умолчанию
+        try:
+            original_message = await self.client.get_messages(
+                chat_id, 
+                ids=discussion_post_id
+            )
+            
+            if original_message and original_message.fwd_from:
+                # Извлекаем ID оригинального поста из канала
+                if hasattr(original_message.fwd_from, 'channel_post') and original_message.fwd_from.channel_post:
+                    channel_post_id = original_message.fwd_from.channel_post
+                    logger.info(f"   ✅ Определен ID поста в канале: {channel_post_id}")
+                elif hasattr(original_message.fwd_from, 'saved_from_msg_id') and original_message.fwd_from.saved_from_msg_id:
+                    channel_post_id = original_message.fwd_from.saved_from_msg_id
+                    logger.info(f"   ✅ Определен ID поста в канале: {channel_post_id}")
+            
+            if channel_post_id == discussion_post_id:
+                logger.warning(f"   ⚠️ Не удалось определить ID поста в канале, используем ID из группы")
+                
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка при получении оригинального сообщения: {e}")
         
         # Получаем информацию об авторе
         sender = await event.get_sender()
@@ -236,9 +259,9 @@ class CommentMonitor:
         
         # Формируем ссылку на пост
         if channel_username:
-            post_link = f"https://t.me/{channel_username}/{post_id}"
+            post_link = f"https://t.me/{channel_username}/{channel_post_id}"
         else:
-            post_link = str(post_id)
+            post_link = str(channel_post_id)
         
         # Формируем уведомление
         notification = (
@@ -252,7 +275,7 @@ class CommentMonitor:
         )
         
         logger.info(
-            f"Новый комментарий от {author_name} в {channel_title} к посту {post_id}"
+            f"Новый комментарий от {author_name} в {channel_title} к посту {channel_post_id}"
         )
         
         # Отправляем уведомление через Bot API
