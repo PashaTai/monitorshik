@@ -462,10 +462,10 @@ class CommentMonitor:
                 await message.download_media(file=doc_bytes)
                 doc_bytes.seek(0)
                 
-                url = f"https://api.telegram.org/bot{self.config.bot_token}/sendDocument"
+                url = f"https://api.telegram.org/bot{self.config.bot_token}/sendSticker"
                 data = aiohttp.FormData()
                 data.add_field('chat_id', str(self.config.alert_chat_id))
-                data.add_field('document', doc_bytes, filename='sticker.webp')
+                data.add_field('sticker', doc_bytes, filename='sticker.webp')
                 
                 async with self.http_session.post(url, data=data) as response:
                     if response.status == 200:
