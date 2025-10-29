@@ -10,13 +10,14 @@ import sys
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 import logging
+from io import BytesIO
 
 import aiohttp
 import pytz
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import GetFullChannelRequest, JoinChannelRequest
-from telethon.tl.types import Channel
+from telethon.tl.types import Channel, MessageMediaPhoto, MessageMediaDocument
 from telethon.errors import (
     ChannelPrivateError,
     InviteHashExpiredError,
@@ -249,9 +250,6 @@ class CommentMonitor:
         author_username = f"@{sender.username}" if sender.username else ""
         author_id = sender.id
         
-        # Текст комментария
-        comment_text = message.text or "(без текста)"
-        
         # Время комментария
         msg_time = message.date
         local_time = msg_time.astimezone(self.tz)
@@ -263,23 +261,281 @@ class CommentMonitor:
         else:
             post_link = str(channel_post_id)
         
-        # Формируем уведомление
-        notification = (
-            f"💬 Новый комментарий в <b>{channel_title}</b>\n\n"
-            f"📄 Пост: {post_link}\n"
-            f"👤 Автор: {author_name} {author_username} (tg://user?id={author_id})\n"
-            f"🕐 Время: {time_str}\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💭 Комментарий:\n"
-            f"{comment_text}"
-        )
-        
         logger.info(
             f"Новый комментарий от {author_name} в {channel_title} к посту {channel_post_id}"
         )
         
-        # Отправляем уведомление через Bot API
+        # Формируем базовый caption (без содержимого комментария)
+        base_caption = self._format_base_caption(
+            channel_title, author_name, author_username, author_id, time_str
+        )
+        
+        # Определяем тип содержимого и отправляем соответствующее уведомление
+        if message.text:
+            # Текстовое сообщение
+            await self._send_text_notification(base_caption, message.text, post_link)
+        elif message.media:
+            # Медиафайл
+            await self._handle_media_message(message, base_caption, post_link)
+        else:
+            # Пустое сообщение (редкий случай)
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    def _format_base_caption(
+        self, 
+        channel_title: str, 
+        author_name: str, 
+        author_username: str, 
+        author_id: int, 
+        time_str: str
+    ) -> str:
+        """Формирует базовую часть caption с информацией о комментарии"""
+        return (
+            f"✈️ <b>TG</b> | {channel_title}\n"
+            f"👤 {author_name} {author_username}\n"
+            f"🆔 <code>{author_id}</code>\n"
+            f"🕐 {time_str}\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        )
+    
+    async def _send_text_notification(self, base_caption: str, text: str, post_link: str):
+        """Отправляет текстовое уведомление с форматированием"""
+        notification = (
+            f"{base_caption}\n"
+            f"<blockquote>{text}</blockquote>\n\n"
+            f"<a href=\"{post_link}\">🔗 Открыть пост</a>"
+        )
         await self._send_notification(notification)
+    
+    async def _send_fallback_notification(self, base_caption: str, post_link: str):
+        """Отправляет fallback уведомление когда не удалось отправить медиа или контент пустой"""
+        notification = (
+            f"{base_caption}\n"
+            f"<b>Пользователь прислал медиафайл, пожалуйста откройте пост чтобы увидеть содержание</b>\n\n"
+            f"<a href=\"{post_link}\">🔗 Открыть пост</a>"
+        )
+        await self._send_notification(notification)
+    
+    async def _handle_media_message(self, message, base_caption: str, post_link: str):
+        """Обрабатывает сообщения с медиафайлами"""
+        media = message.media
+        
+        # Определяем тип медиа и размер
+        if isinstance(media, MessageMediaPhoto):
+            # Фото - всегда отправляем
+            logger.info("   📷 Обнаружено фото, отправляем...")
+            await self._send_photo(message, base_caption, post_link)
+        
+        elif isinstance(media, MessageMediaDocument):
+            doc = media.document
+            mime_type = doc.mime_type if hasattr(doc, 'mime_type') else ''
+            file_size = doc.size if hasattr(doc, 'size') else 0
+            
+            logger.info(f"   📎 Обнаружен документ: mime={mime_type}, size={file_size} bytes")
+            
+            # Проверяем тип документа
+            if 'video' in mime_type or any(
+                attr for attr in doc.attributes 
+                if attr.__class__.__name__ == 'DocumentAttributeVideo'
+            ):
+                # Видео
+                if file_size > 10 * 1024 * 1024:  # 10 МБ
+                    logger.info(f"   ⚠️ Видео слишком большое ({file_size} bytes), отправляем fallback")
+                    await self._send_fallback_notification(base_caption, post_link)
+                else:
+                    logger.info("   🎥 Отправляем видео...")
+                    await self._send_video(message, base_caption, post_link)
+            
+            elif any(
+                attr for attr in doc.attributes 
+                if attr.__class__.__name__ == 'DocumentAttributeSticker'
+            ):
+                # Стикер
+                logger.info("   🖼️ Отправляем стикер...")
+                await self._send_document(message, base_caption, post_link)
+            
+            elif any(
+                attr for attr in doc.attributes 
+                if attr.__class__.__name__ == 'DocumentAttributeAnimated'
+            ) or 'gif' in mime_type:
+                # GIF или анимация
+                logger.info("   🎬 Отправляем GIF/анимацию...")
+                await self._send_document(message, base_caption, post_link)
+            
+            elif 'audio' in mime_type or any(
+                attr for attr in doc.attributes 
+                if attr.__class__.__name__ in ['DocumentAttributeAudio']
+            ):
+                # Голосовое или аудио
+                is_voice = any(
+                    attr for attr in doc.attributes 
+                    if attr.__class__.__name__ == 'DocumentAttributeAudio' 
+                    and hasattr(attr, 'voice') and attr.voice
+                )
+                if is_voice:
+                    logger.info("   🎤 Отправляем голосовое сообщение...")
+                    await self._send_voice(message, base_caption, post_link)
+                else:
+                    logger.info("   🎵 Отправляем аудио как документ...")
+                    await self._send_document(message, base_caption, post_link)
+            else:
+                # Другой документ
+                logger.info("   📄 Отправляем документ...")
+                await self._send_document(message, base_caption, post_link)
+        else:
+            # Неизвестный тип медиа
+            logger.warning(f"   ⚠️ Неизвестный тип медиа: {type(media)}")
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    async def _send_photo(self, message, base_caption: str, post_link: str):
+        """Скачивает и отправляет фото с caption"""
+        try:
+            # Скачиваем фото в память
+            photo_bytes = BytesIO()
+            await message.download_media(file=photo_bytes)
+            photo_bytes.seek(0)
+            
+            # Отправляем через Bot API
+            await self._send_media_to_bot(
+                'sendPhoto',
+                photo_bytes,
+                base_caption,
+                'photo.jpg',
+                post_link
+            )
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка при отправке фото: {e}")
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    async def _send_video(self, message, base_caption: str, post_link: str):
+        """Скачивает и отправляет видео с caption"""
+        try:
+            # Скачиваем видео в память
+            video_bytes = BytesIO()
+            await message.download_media(file=video_bytes)
+            video_bytes.seek(0)
+            
+            # Отправляем через Bot API
+            await self._send_media_to_bot(
+                'sendVideo',
+                video_bytes,
+                base_caption,
+                'video.mp4',
+                post_link
+            )
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка при отправке видео: {e}")
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    async def _send_document(self, message, base_caption: str, post_link: str):
+        """Скачивает и отправляет документ (стикер/GIF) с caption"""
+        try:
+            # Скачиваем документ в память
+            doc_bytes = BytesIO()
+            await message.download_media(file=doc_bytes)
+            doc_bytes.seek(0)
+            
+            # Определяем имя файла
+            filename = 'document'
+            if hasattr(message.media, 'document'):
+                doc = message.media.document
+                for attr in doc.attributes:
+                    if hasattr(attr, 'file_name'):
+                        filename = attr.file_name
+                        break
+            
+            # Отправляем через Bot API
+            await self._send_media_to_bot(
+                'sendDocument',
+                doc_bytes,
+                base_caption,
+                filename,
+                post_link
+            )
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка при отправке документа: {e}")
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    async def _send_voice(self, message, base_caption: str, post_link: str):
+        """Скачивает и отправляет голосовое сообщение с caption"""
+        try:
+            # Скачиваем голосовое в память
+            voice_bytes = BytesIO()
+            await message.download_media(file=voice_bytes)
+            voice_bytes.seek(0)
+            
+            # Отправляем через Bot API
+            await self._send_media_to_bot(
+                'sendVoice',
+                voice_bytes,
+                base_caption,
+                'voice.ogg',
+                post_link
+            )
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка при отправке голосового: {e}")
+            await self._send_fallback_notification(base_caption, post_link)
+    
+    async def _send_media_to_bot(
+        self, 
+        method: str, 
+        media_bytes: BytesIO, 
+        caption: str,
+        filename: str,
+        post_link: str
+    ):
+        """Отправляет медиафайл через Bot API с caption"""
+        url = f"https://api.telegram.org/bot{self.config.bot_token}/{method}"
+        
+        # Добавляем ссылку на пост в caption
+        full_caption = f"{caption}\n\n<a href=\"{post_link}\">🔗 Открыть пост</a>"
+        
+        # Определяем имя поля для разных типов медиа
+        field_name_map = {
+            'sendPhoto': 'photo',
+            'sendVideo': 'video',
+            'sendDocument': 'document',
+            'sendVoice': 'voice'
+        }
+        field_name = field_name_map.get(method, 'document')
+        
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Создаем form data
+                data = aiohttp.FormData()
+                data.add_field('chat_id', str(self.config.alert_chat_id))
+                data.add_field('caption', full_caption)
+                data.add_field('parse_mode', 'HTML')
+                
+                # Добавляем файл
+                media_bytes.seek(0)  # Возвращаемся в начало
+                data.add_field(
+                    field_name,
+                    media_bytes,
+                    filename=filename,
+                    content_type='application/octet-stream'
+                )
+                
+                async with self.http_session.post(url, data=data) as response:
+                    if response.status == 200:
+                        logger.info(f"   ✅ Медиафайл успешно отправлен ({method})")
+                        return
+                    else:
+                        error_text = await response.text()
+                        logger.warning(
+                            f"   Попытка {attempt}/{max_retries}: "
+                            f"Ошибка отправки медиа (status {response.status}): {error_text}"
+                        )
+            except Exception as e:
+                logger.warning(f"   Попытка {attempt}/{max_retries}: Ошибка отправки медиа: {e}")
+            
+            if attempt < max_retries:
+                delay = 2 ** (attempt - 1)
+                await asyncio.sleep(delay)
+        
+        # Если не удалось отправить медиа, выбрасываем исключение
+        raise Exception(f"Не удалось отправить медиа после {max_retries} попыток")
     
     async def _send_notification(self, text: str):
         """Отправка уведомления через Bot API с ретраями"""
@@ -353,4 +609,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
         sys.exit(1)
+
 
