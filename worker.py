@@ -457,21 +457,16 @@ class CommentMonitor:
                 info_text = f"{base_caption}\n\n<b>📩 Пользователь отправил стикер</b>\n\n<a href=\"{post_link}\">🔗 Открыть пост</a>"
                 await self._send_notification(info_text)
                 
-                # Теперь отправляем сам стикер без caption
-                doc_bytes = BytesIO()
-                await message.download_media(file=doc_bytes)
-                doc_bytes.seek(0)
-                
-                url = f"https://api.telegram.org/bot{self.config.bot_token}/sendSticker"
-                data = aiohttp.FormData()
-                data.add_field('chat_id', str(self.config.alert_chat_id))
-                data.add_field('sticker', doc_bytes, filename='sticker.webp')
-                
-                async with self.http_session.post(url, data=data) as response:
-                    if response.status == 200:
-                        logger.info("   ✅ Стикер успешно отправлен")
-                    else:
-                        logger.warning(f"   ⚠️ Ошибка отправки стикера: {await response.text()}")
+                # Отправляем стикер через Telethon (пересылка)
+                # Это единственный надежный способ отправить стикер как стикер
+                try:
+                    await self.client.send_file(
+                        self.config.alert_chat_id,
+                        message.media
+                    )
+                    logger.info("   ✅ Стикер успешно отправлен")
+                except Exception as e:
+                    logger.error(f"   ❌ Ошибка при отправке стикера: {e}")
             else:
                 # Для GIF и других документов - обычная отправка с caption
                 doc_bytes = BytesIO()
