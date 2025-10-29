@@ -271,12 +271,13 @@ class CommentMonitor:
         )
         
         # Определяем тип содержимого и отправляем соответствующее уведомление
-        if message.text:
-            # Текстовое сообщение
-            await self._send_text_notification(base_caption, message.text, post_link)
-        elif message.media:
-            # Медиафайл
+        if message.media:
+            # Медиафайл (с текстом или без)
+            # Если есть текст (подпись к фото/видео), он будет добавлен в caption
             await self._handle_media_message(message, base_caption, post_link)
+        elif message.text:
+            # Только текстовое сообщение (без медиа)
+            await self._send_text_notification(base_caption, message.text, post_link)
         else:
             # Пустое сообщение (редкий случай)
             await self._send_fallback_notification(base_caption, post_link)
@@ -395,11 +396,16 @@ class CommentMonitor:
             await message.download_media(file=photo_bytes)
             photo_bytes.seek(0)
             
+            # Если есть текст (подпись к фото), добавляем его в caption
+            full_caption = base_caption
+            if message.text:
+                full_caption = f"{base_caption}\n<blockquote>{message.text}</blockquote>"
+            
             # Отправляем через Bot API
             await self._send_media_to_bot(
                 'sendPhoto',
                 photo_bytes,
-                base_caption,
+                full_caption,
                 'photo.jpg',
                 post_link
             )
@@ -415,11 +421,16 @@ class CommentMonitor:
             await message.download_media(file=video_bytes)
             video_bytes.seek(0)
             
+            # Если есть текст (подпись к видео), добавляем его в caption
+            full_caption = base_caption
+            if message.text:
+                full_caption = f"{base_caption}\n<blockquote>{message.text}</blockquote>"
+            
             # Отправляем через Bot API
             await self._send_media_to_bot(
                 'sendVideo',
                 video_bytes,
-                base_caption,
+                full_caption,
                 'video.mp4',
                 post_link
             )
@@ -430,28 +441,65 @@ class CommentMonitor:
     async def _send_document(self, message, base_caption: str, post_link: str):
         """Скачивает и отправляет документ (стикер/GIF) с caption"""
         try:
-            # Скачиваем документ в память
-            doc_bytes = BytesIO()
-            await message.download_media(file=doc_bytes)
-            doc_bytes.seek(0)
-            
-            # Определяем имя файла
-            filename = 'document'
+            # Проверяем, это стикер или нет
+            is_sticker = False
             if hasattr(message.media, 'document'):
                 doc = message.media.document
-                for attr in doc.attributes:
-                    if hasattr(attr, 'file_name'):
-                        filename = attr.file_name
-                        break
+                is_sticker = any(
+                    attr for attr in doc.attributes 
+                    if attr.__class__.__name__ == 'DocumentAttributeSticker'
+                )
             
-            # Отправляем через Bot API
-            await self._send_media_to_bot(
-                'sendDocument',
-                doc_bytes,
-                base_caption,
-                filename,
-                post_link
-            )
+            # Для стикеров: сначала отправляем текст, потом стикер
+            # (т.к. стикеры не поддерживают caption)
+            if is_sticker:
+                # Отправляем информацию как отдельное текстовое сообщение
+                info_text = f"{base_caption}\n\n<b>📩 Пользователь отправил стикер</b>\n\n<a href=\"{post_link}\">🔗 Открыть пост</a>"
+                await self._send_notification(info_text)
+                
+                # Теперь отправляем сам стикер без caption
+                doc_bytes = BytesIO()
+                await message.download_media(file=doc_bytes)
+                doc_bytes.seek(0)
+                
+                url = f"https://api.telegram.org/bot{self.config.bot_token}/sendDocument"
+                data = aiohttp.FormData()
+                data.add_field('chat_id', str(self.config.alert_chat_id))
+                data.add_field('document', doc_bytes, filename='sticker.webp')
+                
+                async with self.http_session.post(url, data=data) as response:
+                    if response.status == 200:
+                        logger.info("   ✅ Стикер успешно отправлен")
+                    else:
+                        logger.warning(f"   ⚠️ Ошибка отправки стикера: {await response.text()}")
+            else:
+                # Для GIF и других документов - обычная отправка с caption
+                doc_bytes = BytesIO()
+                await message.download_media(file=doc_bytes)
+                doc_bytes.seek(0)
+                
+                # Определяем имя файла
+                filename = 'document'
+                if hasattr(message.media, 'document'):
+                    doc = message.media.document
+                    for attr in doc.attributes:
+                        if hasattr(attr, 'file_name'):
+                            filename = attr.file_name
+                            break
+                
+                # Если есть текст, добавляем в caption
+                full_caption = base_caption
+                if message.text:
+                    full_caption = f"{base_caption}\n<blockquote>{message.text}</blockquote>"
+                
+                # Отправляем через Bot API
+                await self._send_media_to_bot(
+                    'sendDocument',
+                    doc_bytes,
+                    full_caption,
+                    filename,
+                    post_link
+                )
         except Exception as e:
             logger.error(f"   ❌ Ошибка при отправке документа: {e}")
             await self._send_fallback_notification(base_caption, post_link)
@@ -464,11 +512,16 @@ class CommentMonitor:
             await message.download_media(file=voice_bytes)
             voice_bytes.seek(0)
             
+            # Если есть текст (подпись к голосовому), добавляем его в caption
+            full_caption = base_caption
+            if message.text:
+                full_caption = f"{base_caption}\n<blockquote>{message.text}</blockquote>"
+            
             # Отправляем через Bot API
             await self._send_media_to_bot(
                 'sendVoice',
                 voice_bytes,
-                base_caption,
+                full_caption,
                 'voice.ogg',
                 post_link
             )
